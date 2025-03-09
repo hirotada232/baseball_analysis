@@ -1,0 +1,79 @@
+###Steps in score.
+#【閾値3.0の場合】
+a <- read.csv('data_inning_score3.0.csv')
+
+####Dummy variable.
+a2 <- data.frame(a=factor(a[,2]))
+a2 <- cbind(a[,1],a2,a[,3:ncol(a)])
+
+colnames(a2) <- colnames(a)
+
+library(makedummies)
+b=makedummies(a2)
+
+datall <- b[,c(1:10,15:17)]
+summary(datall)
+head(datall)
+#####
+library(MASS)
+library(MatchIt)
+##########
+#############################
+#############################
+###NB regression, model (4)'.
+#############################
+#############################
+
+
+my_data <- data.frame(k = numeric(0), Estimated = numeric(0), Std = numeric(0))
+
+for(k in 1:10){
+  m.out1 <- matchit(
+    pre_pinch_result ~ first_hitter_2 + first_hitter_3 + first_hitter_4 + 
+                       first_hitter_5 + first_hitter_6 + first_hitter_7 + 
+                       first_hitter_8 + first_hitter_9 + inning,
+    data = datall, replace = TRUE, distance = "glm", 
+    method = "nearest", ratio = k
+  )
+  m.data1 <- match.data(m.out1)
+  
+  model_nb2 <- glm.nb(score_num ~ pre_pinch_result + inning, data = m.data1)
+  
+  # ここがポイント: summary(...)$coefficients を取り出し、行列から要素を指定
+  coef_mat <- summary(model_nb2)$coefficients
+  
+  # 行名で取り出す場合（文字列参照）
+  # coef_est <- coef_mat["pre_pinch_result", "Estimate"]
+  # coef_se  <- coef_mat["pre_pinch_result", "Std. Error"]
+  
+  # 行番号で取り出す場合（2行目がpre_pinch_resultなら）
+  coef_est <- coef_mat[2, 1]  # Estimate
+  coef_se  <- coef_mat[2, 2]  # Std. Error
+
+  print(paste("k=", k))
+  print(paste("Estimate:", coef_est, "StdErr:", coef_se))
+  
+  new_row <- data.frame(k = k, Estimated = coef_est, Std = coef_se)
+  my_data <- rbind(my_data, new_row)
+}
+my_data
+
+##########
+#Bar chart
+##########
+library(ggplot2)
+# Assuming my_data is already created as shown in your example
+# Step 2: Create the bar chart with error bars
+
+# First, create a position variable for bars since the ID/index is not present
+my_data$id <- seq_along(my_data$Estimated)
+
+ggplot(my_data, aes(x = factor(id), y = Estimated)) +
+  geom_bar(stat = "identity", fill = "skyblue") +  # Bar chart
+  geom_errorbar(aes(ymin = Estimated - Std, ymax = Estimated + Std), 
+                width = 0.2, color = "orange") +   # Error bars
+  labs(x = NULL, y = NULL, title = NULL) +
+  theme_minimal()
+
+##########
+ggsave("model4_with_error_bars_score.png", width = 8, height = 3)  # Width and height in inches

@@ -1,0 +1,161 @@
+###Steps in score.
+#【閾値3.0の場合】
+a <- read.csv('data_inning_score3.0.csv')
+
+####Dummy variable.
+a2 <- data.frame(a=factor(a[,2]))
+a2 <- cbind(a[,1],a2,a[,3:ncol(a)])
+
+colnames(a2) <- colnames(a)
+
+library(makedummies)
+b=makedummies(a2)
+
+datall <- b[,c(1:10,15:17)]
+summary(datall)
+head(datall)
+
+
+
+library(MASS)
+model_nb <- glm.nb(score_num ~ pre_pinch_result+first_hitter_2+first_hitter_3+first_hitter_4+first_hitter_5+first_hitter_6+first_hitter_7+first_hitter_8+first_hitter_9+inning, data=datall)
+summary(model_nb)
+
+AIC: 7710.6
+
+
+model_nb2 <- glm.nb(score_num ~ pre_pinch_result+inning, data=datall)
+summary(model_nb2)
+
+AIC: 7723.7
+
+###
+# DHARMaによるシミュレーション残差の生成
+set.seed(123)
+library(DHARMa)
+testDispersion(model_nb)
+simulationOutput <- simulateResiduals(fittedModel = model_nb)
+
+par(mfrow=c(1,2))
+testDispersion(simulationOutput)
+plotResiduals(simulationOutput,datall$score_nmu)
+
+
+# DHARMaによるシミュレーション残差の生成
+library(DHARMa)
+testDispersion(model_nb)
+simulationOutput <- simulateResiduals(fittedModel = model_nb)
+plot(simulationOutput)
+
+dh <- simulationOutput
+
+
+
+# 検定力のシミュレーション
+
+################
+##Power analysis.
+
+library(glmmTMB)
+library(DHARMa)
+library(MASS)  # glm.nb() を使うために必要
+
+set.seed(123)
+
+# ---- 1. 負の二項回帰モデルの適用 ----
+model_nb1 <- glm.nb(score_num ~ pre_pinch_result + first_hitter_2 + first_hitter_3 + 
+                     first_hitter_4 + first_hitter_5 + first_hitter_6 + first_hitter_7 + 
+                     first_hitter_8 + first_hitter_9 + inning, data = datall)
+
+# ---- 2. DHARMa を使ってシミュレーション ----
+sim_res <- simulateResiduals(fittedModel = model_nb1, n = 1000)
+
+# ---- 3. シミュレーションの分布をチェック ----
+plot(sim_res)
+
+# ---- 4. シミュレーションデータを使い、繰り返しモデルをフィット ----
+n_sim <- 1000  # シミュレーション回数
+p_values <- numeric(n_sim)  # p値を保存
+
+for (i in 1:n_sim) {
+  # DHARMa のシミュレーションデータを取得
+  datall$score_num_sim <- recalculateResiduals(sim_res)$simulatedResponse[, i]  
+  
+  # 負の二項回帰モデルを適用
+  model_sim <- glm.nb(score_num_sim ~ pre_pinch_result + first_hitter_2 + first_hitter_3 + 
+                       first_hitter_4 + first_hitter_5 + first_hitter_6 + first_hitter_7 + 
+                       first_hitter_8 + first_hitter_9 + inning, data = datall)
+  
+  # p値を保存
+  p_values[i] <- coefficients(summary(model_sim))["pre_pinch_result", "Pr(>|z|)"]
+}
+
+# p値の分布を確認
+hist(p_values)
+mean(p_values < 0.05)  # 検出力
+
+# パワーを計算（p < 0.05 の割合）
+power <- mean(p_values < 0.05)
+print(paste("推定パワー: ", round(power, 3)))
+
+
+
+#####
+library(MASS)
+model_nb <- glm.nb(score_num ~ pre_pinch_result+inning, data=datall)
+summary(model_nb)
+
+ # デビアンス残差の計算
+   deviance_residuals <- residuals(model_nb2, type = "deviance")
+
+   # QQプロット（デビアンス残差）
+   qqnorm(deviance_residuals)
+   qqline(deviance_residuals, col = "red")
+
+
+hist(residuals(model_nb, type = "pearson"), breaks = 20, main = "Histogram of Pearson Residuals", xlab = "Pearson Residuals")
+
+###
+library(DHARMa)
+simulationOutput <- simulateResiduals(fittedModel = model_poisson)
+
+# 診断プロットの作成
+plot(simulationOutput)
+    
+
+###############################################
+library(MatchIt)
+m.out1 <- matchit(pre_pinch_result ~ first_hitter_2+first_hitter_3+first_hitter_4+first_hitter_5+first_hitter_6+first_hitter_7+first_hitter_8+first_hitter_9+inning,data=datall,replace=TRUE,distance="glm",method="nearest",ratio=1)
+m.data1 <- match.data(m.out1)
+
+
+
+library(MASS)
+model_nb2 <- glm.nb(score_num ~ pre_pinch_result+first_hitter_2+first_hitter_3+first_hitter_4+first_hitter_5+first_hitter_6+first_hitter_7+first_hitter_8+first_hitter_9+inning, data=m.data1)
+summary(model_nb2)
+
+
+qqnorm(residuals(model_nb2, type = "deviance"))
+qqline(residuals(model_nb2, type = "deviance"), col = "red")
+
+##############################################3
+ # デビアンス残差の計算
+   deviance_residuals <- residuals(model_nb2, type = "deviance")
+
+   # QQプロット（デビアンス残差）
+   qqnorm(deviance_residuals)
+   qqline(deviance_residuals, col = "red")
+
+
+par(mfrow = c(2, 2))
+plot(model_nb)
+
+
+# 検定力のシミュレーション
+library(simr)
+pwr <- powerSim(model_nb2, nsim=1000) # nsimはシミュレーション回数
+print(pwr) # 結果表示
+
+###########
+model_quasi <- glm(score_num ~ pre_pinch_result) +first_hitter_2+first_hitter_3+first_hitter_4+first_hitter_5+first_hitter_6+first_hitter_7+first_hitter_8+first_hitter_9+inning,family = quasipoisson, data=datall)
+summary(model_quasi)

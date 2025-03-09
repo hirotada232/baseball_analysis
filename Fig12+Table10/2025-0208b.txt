@@ -1,0 +1,163 @@
+a <- read.csv('data_inning_score3.0.csv')
+
+####Dummy variable.
+a2 <- data.frame(a=factor(a[,2]))
+a2 <- cbind(a[,1],a2,a[,3:ncol(a)])
+
+colnames(a2) <- colnames(a)
+
+library(makedummies)
+b=makedummies(a2)
+
+datall <- b[,c(1:10,15:17)]
+summary(datall)
+head(datall)
+###################
+#####
+#2021 Spring and Summer
+#datall <- datall[1:1387,]
+
+#2022 Spring and Summer
+#datall <- datall[1388:2786,]
+
+#2023 Spring and Summer
+#datall <- datall[2787:4260,]
+
+#datall <- datall[c(1:1387,2787:4260),]
+
+
+#################
+library(glmmTMB)
+library(gamlss)
+
+# OBPを目的変数、pre_pinch_result と inning を説明変数として、
+# 0と1両方に膨張があるベータ分布 (BEINF) を使う例:
+
+################Matching.
+library(MatchIt)
+m.out1 <- matchit(pre_pinch_result ~ first_hitter_2+first_hitter_3+first_hitter_4+first_hitter_5+first_hitter_6+first_hitter_7+first_hitter_8+first_hitter_9+inning,data=datall,replace=TRUE,distance="glm",method="nearest",ratio=10)
+m.data1 <- match.data(m.out1)
+#
+summary(m.out1)
+
+################
+#model-1
+#mod_BEINF <- gamlss(
+#  formula = OBP ~ pre_pinch_result + inning + first_hitter_2+first_hitter_3+first_hitter_4+first_hitter_5+first_hitter_6+first_hitter_7+first_hitter_8+first_hitter_9,  # μパラメータに関するモデル
+#  sigma.formula = ~ 1,    # σは定数（~ 1）
+#  nu.formula    = ~ 1,    # νは定数（~ 1） → 0膨張部分
+#  tau.formula   = ~ 1,    # τは定数（~ 1） → 1膨張部分
+#  family = BEINF,         # 0・1両方の膨張を考慮したベータ分布
+#  data = m.data1
+#)
+
+#summary(mod_BEINF)
+#  AIC:     234.1965
+
+################
+#model-2
+mod_BEINF <- gamlss(
+  formula = OBP ~ pre_pinch_result + inning,  # μパラメータに関するモデル
+  sigma.formula = ~ 1,    # σは定数（~ 1）
+  nu.formula    = ~ 1,    # νは定数（~ 1） → 0膨張部分
+  tau.formula   = ~ 1,    # τは定数（~ 1） → 1膨張部分
+  family = BEINF,         # 0・1両方の膨張を考慮したベータ分布
+  data = m.data1
+)
+
+summary(mod_BEINF)
+plot(mod_BEINF)
+
+################
+#residual analysis
+set.seed(123)
+N <- nrow(m.data1)
+nsim <- 1000
+
+mu_vec  <- predict(mod_BEINF, what="mu",  type="response")
+sg_vec  <- predict(mod_BEINF, what="sigma", type="response")
+nu_vec  <- predict(mod_BEINF, what="nu",  type="response")
+tau_vec <- predict(mod_BEINF, what="tau", type="response")
+
+simMatrix <- matrix(NA, nrow = N, ncol = nsim)
+for(i in 1:nsim){
+  simMatrix[, i] <- rBEINF(n = N, mu = mu_vec, sigma = sg_vec, 
+                           nu = nu_vec, tau = tau_vec)
+}
+
+
+library(DHARMa)
+
+dh <- createDHARMa(
+  simulatedResponse = simMatrix,               # 上で作った N行 x nsim列 のシミュレーション
+  observedResponse  = m.data1$OBP,             # 実際の観測応答
+  fittedPredictedResponse = mu_vec,           # 期待値または予測値
+  integerResponse = FALSE                     # 今回は連続なのでFALSE
+)
+plot(dh)
+testZeroInflation(dh)
+testDispersion(dh)
+################3
+
+
+#power analysis
+# 例: 既に mod_BEINF というgamlssモデルをフィット済み
+mu_hat  <- predict(mod_BEINF, what = "mu",    type="response")
+sg_hat  <- predict(mod_BEINF, what = "sigma", type="response")
+nu_hat  <- predict(mod_BEINF, what = "nu",    type="response")
+tau_hat <- predict(mod_BEINF, what = "tau",   type="response")
+
+# モデル式で pre_pinch_result の係数を操作したい場合:
+# 例: small_effect / large_effect など、複数パターンを定義
+###
+start_time <- Sys.time()
+set.seed(123)
+nsim <- 1000
+pvals <- numeric(nsim)
+
+for(i in 1:nsim){
+  if (i %% 50 == 0) {
+    print(i)
+  }
+  # (1) データ生成
+  y_sim <- rBEINF(
+    n = length(mu_hat),
+    mu = mu_hat, 
+    sigma = sg_hat,
+    nu = nu_hat, 
+    tau = tau_hat
+  )
+
+  # (2) フィット
+  #    データフレームにシミュレートした y を入れて再度 gamlss を当てる
+  df_sim <- m.data1
+  df_sim$OBP_sim <- y_sim
+
+  mod_sim <- gamlss(
+    formula = OBP_sim ~ pre_pinch_result + inning, # 同じモデル式
+    sigma.formula = ~ 1,
+    nu.formula = ~ 1,
+    tau.formula = ~ 1,
+    family = BEINF,
+    data = df_sim,
+    trace  = FALSE
+  )
+
+  # (A) capture.output() で要約表示を抑制
+  tmp <- capture.output({
+    summ <- summary(mod_sim)
+  })
+
+  # "Mu Coefficients" の p値にアクセス
+  # 例えば 1列目が Estimate, 4列目が Pr(>|t|) になっていることが多いが要確認
+  p_val <- summ["pre_pinch_result", "Pr(>|t|)"]
+ pvals[i] <- p_val
+}
+
+# (4) p値 < 0.05 の割合 = 検出力
+mean(pvals < 0.05)
+end_time <- Sys.time()
+
+# 計算時間を表示
+end_time - start_time
+###

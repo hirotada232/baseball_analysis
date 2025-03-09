@@ -1,0 +1,104 @@
+#【閾値3.0の場合】
+
+
+a <- read.csv('data_inning_score3.0.csv')
+
+####Dummy variable.
+a2 <- data.frame(a=factor(a[,2]))
+a2 <- cbind(a[,1],a2,a[,3:ncol(a)])
+
+colnames(a2) <- colnames(a)
+
+library(makedummies)
+b=makedummies(a2)
+
+datall <- b[,c(1:10,15:17)]
+summary(datall)
+head(datall)
+
+####
+library(MatchIt)
+library(glmmTMB)
+library(gamlss)
+
+################
+##########
+##########
+#With ratio being varied.
+my_data <- data.frame(Estimated = numeric(0), Std = numeric(0))
+
+
+
+
+library(gamlss)
+library(MatchIt)
+
+my_data <- data.frame(k = numeric(0), Estimated = numeric(0), Std = numeric(0))
+
+for(k in 1:10){
+  # (1) マッチング
+  m.out1 <- matchit(
+    pre_pinch_result ~ first_hitter_2 + first_hitter_3 + first_hitter_4 + 
+                       first_hitter_5 + first_hitter_6 + first_hitter_7 + 
+                       first_hitter_8 + first_hitter_9 + inning,
+    data      = datall, 
+    replace   = TRUE,
+    distance  = "glm", 
+    method    = "nearest", 
+    ratio     = k
+  )
+  m.data1 <- match.data(m.out1)
+
+  # (2) GAMLSSモデリング
+  mod_BEINF <- gamlss(
+    formula       = OBP ~ pre_pinch_result + inning + first_hitter_2 + first_hitter_3 + first_hitter_4 + 
+                       first_hitter_5 + first_hitter_6 + first_hitter_7 + first_hitter_8 + first_hitter_9,  
+    sigma.formula = ~ 1,    
+    nu.formula    = ~ 1,    
+    tau.formula   = ~ 1,    
+    family        = BEINF,         
+    data          = m.data1
+  )
+
+  # (3) muパラメータにおける回帰係数＆標準誤差を抽出
+  #     (今回は "pre_pinch_result" の係数だけ取りたいと想定)
+  m_coef  <- coef(mod_BEINF, what = "mu")       # 推定値ベクトル
+  m_vcov  <- vcov(mod_BEINF, what = "mu")       # 分散共分散行列
+  m_se    <- sqrt(diag(m_vcov))                # 標準誤差
+  
+  est_pre <- m_coef["pre_pinch_result"]        # 推定値
+  se_pre  <- m_se["pre_pinch_result"]          # 標準誤差
+
+  # (4) データフレームにまとめる
+  new_row <- data.frame(k = k, Estimated = est_pre, Std = se_pre)
+  my_data <- rbind(my_data, new_row)
+  
+  cat("\nk =", k, "\n")
+  cat("Estimate of pre_pinch_result:", est_pre, "\n")
+  cat("Std Error of pre_pinch_result:", se_pre, "\n")
+}
+
+my_data
+##########
+##########
+#Bar chart without labels and titles
+##########
+library(ggplot2)
+# Assuming my_data is already created as shown in your example
+# Step 2: Create the bar chart with error bars
+
+# First, create a position variable for bars since the ID/index is not present
+my_data$id <- seq_along(my_data$Estimated)
+
+ggplot(my_data, aes(x = factor(id), y = Estimated)) +
+  geom_bar(stat = "identity", fill = "skyblue") +  # Bar chart
+  geom_errorbar(aes(ymin = Estimated - Std, ymax = Estimated + Std), 
+                width = 0.2, color = "orange") +   # Error bars
+  labs(x =NULL, y = NULL, title = NULL) +
+  theme_minimal()
+
+
+ggsave("ZOIB_1prime.png", width = 8, height = 3)  # Width and height in inches
+
+
+

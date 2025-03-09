@@ -1,0 +1,472 @@
+# 2. パッケージをロード
+library(Cairo)
+library(showtext)
+
+# 3. 日本語フォントを登録（Meiryoなど）
+font_add("meiryo", "C:/Windows/Fonts/meiryo.ttc")
+showtext_auto()
+
+
+#######################################ok
+
+
+
+
+myPlotQQunif <- function(simulationOutput,
+                         testUniformity = TRUE,
+                         testOutliers   = TRUE,
+                         testDispersion = TRUE,
+                         main = "",
+                         xlab = "",  # ユーザー指定は受け取るが後で削除
+                         ylab = "",
+                         ...) {
+
+  a <- list(...)
+  a$pch       = DHARMa:::checkDots("pch", 2, ...)
+  a$bty       = DHARMa:::checkDots("bty", "n", ...)
+  a$logscale  = DHARMa:::checkDots("logscale", FALSE, ...)
+  a$col       = DHARMa:::checkDots("col", "black", ...)
+  a$main      = DHARMa:::checkDots("main", main, ...)
+  a$xlim      = DHARMa:::checkDots("xlim", c(0, 1), ...)
+  a$ylim      = DHARMa:::checkDots("ylim", c(0, 1), ...)
+  
+  # ここで、xlab と ylab の指定を削除（NULLにする）
+  a$xlab <- NULL
+  a$ylab <- NULL
+
+  simulationOutput = DHARMa:::ensureDHARMa(simulationOutput, convert = "Model")
+  do.call(gap::qqunif, append(list(simulationOutput$scaledResiduals), a))
+  
+  if (testUniformity == TRUE) {
+    temp = testUniformity(simulationOutput, plot = FALSE)
+    legend("topleft",
+           c(paste("KS test: p=", round(temp$p.value, digits = 5)),
+             paste("Deviation", ifelse(temp$p.value < 0.05, "significant", "n.s."))),
+           text.col = ifelse(temp$p.value < 0.05, .Options$DHARMaSignalColor, "black"),
+           bty = "n")
+  }
+  if (testOutliers == TRUE) {
+    temp = testOutliers(simulationOutput, plot = FALSE)
+    legend("bottomright",
+           c(paste("Outlier test: p=", round(temp$p.value, digits = 5)),
+             paste("Deviation", ifelse(temp$p.value < 0.05, "significant", "n.s."))),
+           text.col = ifelse(temp$p.value < 0.05, .Options$DHARMaSignalColor, "black"),
+           bty = "n")
+  }
+  if (testDispersion == TRUE) {
+    temp = testDispersion(simulationOutput, plot = FALSE)
+    legend("center",
+           c(paste("Dispersion test: p=", round(temp$p.value, digits = 5)),
+             paste("Deviation", ifelse(temp$p.value < 0.05, "significant", "n.s."))),
+           text.col = ifelse(temp$p.value < 0.05, .Options$DHARMaSignalColor, "black"),
+           bty = "n")
+  }
+}
+
+
+###########################
+# gap::qqunif のコードをコピーし、英語ラベルを空文字に変更
+myQqunif <- function (u, type = "unif", logscale = FALSE, base = 10, 
+                      col = palette()[4], lcol = palette()[2], 
+                      ci = FALSE, alpha = 0.05, ...) 
+{
+    # もともと英語ラベルを設定している箇所を空文字に
+    xlabel <- ifelse(logscale, paste("-log", base, "(Expected)", sep = ""), "")
+    ylabel <- ifelse(logscale, paste("-log", base, "(Observed)", sep = ""), "")
+    
+    u <- u[!is.na(u)]
+    n <- length(u)
+    if (ci) cval <- abs(qnorm(alpha/2))
+    
+    if (type == "exp") {
+        n1 <- 1/(n:1)
+        n2 <- n1^2
+        lambda <- 1/log(base)
+        m <- cumsum(n1) * lambda
+        z <- qqplot(m, -log(u, base), xlab = xlabel, ylab = ylabel, col = col, ...)
+        if (ci) {
+            v <- cumsum(n2) * lambda^2
+            s <- sqrt(v)
+            lcl <- m - cval * s
+            ucl <- m + cval * s
+            lines(m, lcl)
+            lines(m, ucl)
+        }
+    }
+    else if (type == "unif") {
+        m <- (1:n)/(n + 1)
+        if (logscale) {
+            z <- qqplot(-log(m, base), -log(u, base), 
+                        xlab = xlabel, ylab = ylabel, col = col, ...)
+        } else {
+            z <- qqplot(m, u, xlab = xlabel, ylab = ylabel, col = col, ...)
+        }
+        if (ci) {
+            v <- (1:n) * (n - (1:n) + 1)/(n + 1)^2/(n + 2)
+            s <- sqrt(v)
+            lcl <- m - cval * s
+            ucl <- m + cval * s
+            lid <- (lcl > 0)
+            uid <- (ucl <= 1)
+            if (logscale) {
+                a <- -log(m[lid], base)
+                b <- -log(lcl[lid], base)
+                c <- -log(m[uid], base)
+                d <- -log(ucl[uid], base)
+            } else {
+                a <- m[lid]
+                b <- lcl[lid]
+                c <- m[uid]
+                d <- ucl[uid]
+            }
+            lines(a, b)
+            lines(c, d)
+        }
+    }
+    else stop("invalid type")
+    
+    abline(0, 1, col = lcol)
+    invisible(z)
+}
+
+myPlotQQunif <- function(simulationOutput,
+                         testUniformity = TRUE,
+                         testOutliers   = TRUE,
+                         testDispersion = TRUE,
+                         main = "",
+                         ...) {
+
+  # DHARMa:::plotQQunif のソースをコピーし、gap::qqunif の代わりに myQqunif を呼ぶ
+  a <- list(...)
+  a$pch       = DHARMa:::checkDots("pch", 2, ...)
+  a$bty       = DHARMa:::checkDots("bty", "n", ...)
+  a$logscale  = DHARMa:::checkDots("logscale", FALSE, ...)
+  a$col       = DHARMa:::checkDots("col", "black", ...)
+  a$main      = DHARMa:::checkDots("main", main, ...)
+  a$xlim      = DHARMa:::checkDots("xlim", c(0, 1), ...)
+  a$ylim      = DHARMa:::checkDots("ylim", c(0, 1), ...)
+
+  # DHARMa の標準処理
+  simulationOutput = DHARMa:::ensureDHARMa(simulationOutput, convert = "Model")
+
+  # *** ここがポイント：gap::qqunif ではなく myQqunif() を呼ぶ ***
+  do.call(myQqunif, append(list(simulationOutput$scaledResiduals), a))
+
+  # 以下、KS test / Outlier test / Dispersion test の結果表示はオリジナルをコピー
+  if (testUniformity == TRUE) {
+    temp = testUniformity(simulationOutput, plot = FALSE)
+    legend("topleft",
+           c(paste("KS test: p=", round(temp$p.value, digits = 5)),
+             paste("Deviation ", ifelse(temp$p.value < 0.05, "significant", "n.s."))),
+           text.col = ifelse(temp$p.value < 0.05, .Options$DHARMaSignalColor, "black"),
+           bty = "n")
+  }
+  if (testOutliers == TRUE) {
+    temp = testOutliers(simulationOutput, plot = FALSE)
+    legend("bottomright",
+           c(paste("Outlier test: p=", round(temp$p.value, digits = 5)),
+             paste("Deviation ", ifelse(temp$p.value < 0.05, "significant", "n.s."))),
+           text.col = ifelse(temp$p.value < 0.05, .Options$DHARMaSignalColor, "black"),
+           bty = "n")
+  }
+  if (testDispersion == TRUE) {
+    temp = testDispersion(simulationOutput, plot = FALSE)
+    legend("center",
+           c(paste("Dispersion test: p=", round(temp$p.value, digits = 5)),
+             paste("Deviation ", ifelse(temp$p.value < 0.05, "significant", "n.s."))),
+           text.col = ifelse(temp$p.value < 0.05, .Options$DHARMaSignalColor, "black"),
+           bty = "n")
+  }
+}
+
+pdf("myDHARMa_custom.pdf", width=10, height=5)
+par(mfrow = c(1,2))
+
+# QQプロット（myPlotQQunif で英語ラベルを消去）
+myPlotQQunif(dh, testUniformity=TRUE, testOutliers=TRUE, testDispersion=TRUE, main="")
+usr <- par("usr")
+mtext("期待される値", side=1, line=2, at=mean(usr[1:2]), cex=1.2)
+mtext("観測された値", side=2, line=2, at=mean(usr[3:4]), cex=1.2)
+
+# 残差プロット（必要なら同様にカスタム）
+plotResiduals(dh, main="", rank=TRUE)
+usr2 <- par("usr")
+mtext("予測値（順位変換済）", side=1, line=2, at=mean(usr2[1:2]), cex=1.2)
+mtext("DHARMa 残差", side=2, line=2, at=mean(usr2[3:4]), cex=1.2)
+
+dev.off()
+
+#######ok
+
+# gap::qqunif のコードをコピーし、英語ラベルを空文字に変更
+myQqunif <- function (u, type = "unif", logscale = FALSE, base = 10, 
+                      col = palette()[4], lcol = palette()[2], 
+                      ci = FALSE, alpha = 0.05, ...) 
+{
+    # もともと英語ラベルを設定している箇所を空文字に
+    xlabel <- ifelse(logscale, paste("-log", base, "(Expected)", sep = ""), "")
+    ylabel <- ifelse(logscale, paste("-log", base, "(Observed)", sep = ""), "")
+    
+    u <- u[!is.na(u)]
+    n <- length(u)
+    if (ci) cval <- abs(qnorm(alpha/2))
+    
+    if (type == "exp") {
+        n1 <- 1/(n:1)
+        n2 <- n1^2
+        lambda <- 1/log(base)
+        m <- cumsum(n1) * lambda
+        z <- qqplot(m, -log(u, base), xlab = xlabel, ylab = ylabel, col = col, ...)
+        if (ci) {
+            v <- cumsum(n2) * lambda^2
+            s <- sqrt(v)
+            lcl <- m - cval * s
+            ucl <- m + cval * s
+            lines(m, lcl)
+            lines(m, ucl)
+        }
+    }
+    else if (type == "unif") {
+        m <- (1:n)/(n + 1)
+        if (logscale) {
+            z <- qqplot(-log(m, base), -log(u, base), 
+                        xlab = xlabel, ylab = ylabel, col = col, ...)
+        } else {
+            z <- qqplot(m, u, xlab = xlabel, ylab = ylabel, col = col, ...)
+        }
+        if (ci) {
+            v <- (1:n) * (n - (1:n) + 1)/(n + 1)^2/(n + 2)
+            s <- sqrt(v)
+            lcl <- m - cval * s
+            ucl <- m + cval * s
+            lid <- (lcl > 0)
+            uid <- (ucl <= 1)
+            if (logscale) {
+                a <- -log(m[lid], base)
+                b <- -log(lcl[lid], base)
+                c <- -log(m[uid], base)
+                d <- -log(ucl[uid], base)
+            } else {
+                a <- m[lid]
+                b <- lcl[lid]
+                c <- m[uid]
+                d <- ucl[uid]
+            }
+            lines(a, b)
+            lines(c, d)
+        }
+    }
+    else stop("invalid type")
+    
+    abline(0, 1, col = lcol)
+    invisible(z)
+}
+
+myPlotQQunif <- function(simulationOutput,
+                         testUniformity = TRUE,
+                         testOutliers   = TRUE,
+                         testDispersion = TRUE,
+                         main = "",
+                         ...) {
+
+  # DHARMa:::plotQQunif のソースをコピーし、gap::qqunif の代わりに myQqunif を呼ぶ
+  a <- list(...)
+  a$pch       = DHARMa:::checkDots("pch", 2, ...)
+  a$bty       = DHARMa:::checkDots("bty", "n", ...)
+  a$logscale  = DHARMa:::checkDots("logscale", FALSE, ...)
+  a$col       = DHARMa:::checkDots("col", "black", ...)
+  a$main      = DHARMa:::checkDots("main", main, ...)
+  a$xlim      = DHARMa:::checkDots("xlim", c(0, 1), ...)
+  a$ylim      = DHARMa:::checkDots("ylim", c(0, 1), ...)
+
+  # DHARMa の標準処理
+  simulationOutput = DHARMa:::ensureDHARMa(simulationOutput, convert = "Model")
+
+  # *** ここがポイント：gap::qqunif ではなく myQqunif() を呼ぶ ***
+  do.call(myQqunif, append(list(simulationOutput$scaledResiduals), a))
+
+  # 以下、KS test / Outlier test / Dispersion test の結果表示はオリジナルをコピー
+  if (testUniformity == TRUE) {
+    temp = testUniformity(simulationOutput, plot = FALSE)
+    legend("topleft",
+           c(paste("KS test: p=", round(temp$p.value, digits = 5)),
+             paste("Deviation ", ifelse(temp$p.value < 0.05, "significant", "n.s."))),
+           text.col = ifelse(temp$p.value < 0.05, .Options$DHARMaSignalColor, "black"),
+           bty = "n")
+  }
+  if (testOutliers == TRUE) {
+    temp = testOutliers(simulationOutput, plot = FALSE)
+    legend("bottomright",
+           c(paste("Outlier test: p=", round(temp$p.value, digits = 5)),
+             paste("Deviation ", ifelse(temp$p.value < 0.05, "significant", "n.s."))),
+           text.col = ifelse(temp$p.value < 0.05, .Options$DHARMaSignalColor, "black"),
+           bty = "n")
+  }
+  if (testDispersion == TRUE) {
+    temp = testDispersion(simulationOutput, plot = FALSE)
+    legend("center",
+           c(paste("Dispersion test: p=", round(temp$p.value, digits = 5)),
+             paste("Deviation ", ifelse(temp$p.value < 0.05, "significant", "n.s."))),
+           text.col = ifelse(temp$p.value < 0.05, .Options$DHARMaSignalColor, "black"),
+           bty = "n")
+  }
+}
+
+######################ok
+myPlotResiduals <- function(simulationOutput,
+                            form = NULL,
+                            quantreg = NULL,
+                            rank = TRUE,
+                            asFactor = NULL,
+                            smoothScatter = NULL,
+                            quantiles = c(0.25, 0.5, 0.75),
+                            absoluteDeviation = FALSE,
+                            main = "",
+                            ...) 
+{
+  # ここから下は DHARMa:::plotResiduals のソースをコピーし、一部修正
+
+  a <- list(...)
+  # y 軸ラベルを空文字に変更（デフォルトは "DHARMa residual"）
+  yAxis = ifelse(absoluteDeviation == TRUE, 
+                 "",  # "Residual spread [2*abs(res - 0.5)]" → ""
+                 "")  # "DHARMa residual" → ""
+  a$ylab = DHARMa:::checkDots("ylab", yAxis, ...)
+
+  # x 軸ラベルを空文字に変更（デフォルトは "Model predictions"）
+  # rank=TRUE の場合、"(rank transformed)" が付くので、それも消す
+  xAxisLabel <- ""
+  a$xlab = DHARMa:::checkDots("xlab", xAxisLabel, ...)
+  if (rank == TRUE) {
+    # デフォルトでは a$xlab = paste(a$xlab, "(rank transformed)")
+    # → これを削除するため、何もしない
+  }
+
+  # DHARMa の標準処理
+  simulationOutput = DHARMa:::ensureDHARMa(simulationOutput, convert = TRUE)
+  res = simulationOutput$scaledResiduals
+  if (absoluteDeviation == TRUE) {
+    res = 2 * abs(res - 0.5)
+  }
+
+  if (inherits(form, "DHARMa")) {
+    stop("DHARMa::plotResiduals > argument form cannot be of class DHARMa. See ?plotResiduals.")
+  }
+  pred = DHARMa:::ensurePredictor(simulationOutput, form)
+
+  # 以下、ほぼオリジナルのまま
+  if (!is.factor(pred)) {
+    if (rank == TRUE) {
+      pred = rank(pred, ties.method = "average")
+      pred = pred / max(pred)
+      a$xlim = DHARMa:::checkDots("xlim", c(0, 1), ...)
+    }
+    nuniq = length(unique(pred))
+    ndata = length(pred)
+    if (is.null(asFactor)) 
+      asFactor = (nuniq == 1) | (nuniq < 10 & ndata/nuniq > 10)
+    if (asFactor) pred = factor(pred)
+  }
+
+  if (is.null(quantreg)) {
+    if (length(res) > 2000) quantreg = FALSE
+    else quantreg = TRUE
+  }
+
+  switchScatter = 10000
+  if (is.null(smoothScatter)) {
+    if (length(res) > switchScatter) smoothScatter = TRUE
+    else smoothScatter = FALSE
+  }
+  blackcol = rgb(0, 0, 0, alpha = max(0.1, 1 - 3 * length(res)/switchScatter))
+
+  if (is.factor(pred)) {
+    testCategorical(simulationOutput = simulationOutput, catPred = pred, quantiles = quantiles)
+  } else if (smoothScatter == TRUE) {
+    defaultCol = ifelse(res == 0 | res == 1, 2, blackcol)
+    do.call(graphics::smoothScatter, append(list(x = pred, y = res, ylim = c(0, 1), axes = FALSE,
+                                                 colramp = colorRampPalette(c("white","darkgrey"))), a))
+    points(pred[defaultCol == 2], res[defaultCol == 2], 
+           col = .Options$DHARMaSignalColor, cex = 0.5)
+    axis(1)
+    axis(2, at = c(0, quantiles, 1))
+  } else {
+    defaultCol = ifelse(res == 0 | res == 1, 2, blackcol)
+    defaultPch = ifelse(res == 0 | res == 1, 8, 1)
+    a$col = DHARMa:::checkDots("col", defaultCol, ...)
+    a$pch = DHARMa:::checkDots("pch", defaultPch, ...)
+    do.call(plot, append(list(res ~ pred, ylim = c(0, 1), axes = FALSE), a))
+    axis(1)
+    axis(2, at = c(0, quantiles, 1))
+  }
+
+  # main のデフォルトも上書き（空文字にしたい場合）
+  main = DHARMa:::checkDots("main", main, ...)
+  out = NULL
+  if (is.numeric(pred)) {
+    if (quantreg == FALSE) {
+      title(main = main, cex.main = 1)
+      abline(h = quantiles, col = "black", lwd = 0.5, lty = 2)
+      try({
+        lines(stats::smooth.spline(pred, res, df = 10), lty = 2, 
+              lwd = 2, col = .Options$DHARMaSignalColor)
+        abline(h = 0.5, col = .Options$DHARMaSignalColor, lwd = 2)
+      }, silent = TRUE)
+    } else {
+      out = testQuantiles(res, pred, quantiles = quantiles, plot = FALSE)
+      # 以降はオリジナルをコピー
+      if (is.na(out$p.value)) {
+        main = paste(main, "Some quantile regressions failed", sep = "\n")
+        maincol = .Options$DHARMaSignalColor
+      } else {
+        if (any(out$pvals < 0.05, na.rm = TRUE)) {
+          main = paste(main, "Quantile deviations detected (red curves)", sep = "\n")
+          if (out$p.value <= 0.05) {
+            main = paste(main, "Combined adjusted quantile test significant", sep = "\n")
+          } else {
+            main = paste(main, "Combined adjusted quantile test n.s.", sep = "\n")
+          }
+          maincol = .Options$DHARMaSignalColor
+        } else {
+          #main = paste(main, "No significant problems detected", sep = "\n")
+          maincol = "black"
+        }
+      }
+      title(main = main, cex.main = 0.8, col.main = maincol)
+      for (i in 1:length(quantiles)) {
+        lineCol = ifelse(out$pvals[i] <= 0.05 & !(is.na(out$pvals[i])),
+                         .Options$DHARMaSignalColor, "black")
+        filCol  = ifelse(out$pvals[i] <= 0.05 & !(is.na(out$pvals[i])),
+                         "#FF000040", "#00000020")
+        abline(h = quantiles[i], col = lineCol, lwd = 0.5, lty = 2)
+        polygon(c(out$predictions$pred, rev(out$predictions$pred)),
+                c(out$predictions[, 2 * i] - out$predictions[, 2 * i + 1],
+                  rev(out$predictions[, 2 * i] + out$predictions[, 2 * i + 1])),
+                col = "#00000020", border = FALSE)
+        lines(out$predictions$pred, out$predictions[, 2 * i], col = lineCol, lwd = 2)
+      }
+    }
+  }
+  invisible(out)
+}
+
+
+pdf("fig9-0228.pdf", width=10, height=5)
+par(mfrow=c(1,2))
+
+# 左側: myPlotQQunif() (既に作成済み)
+myPlotQQunif(dh, testUniformity=TRUE, testOutliers=TRUE, testDispersion=TRUE, main="")
+usr <- par("usr")
+mtext("期待される値", side=1, line=2, at=mean(usr[1:2]), cex=1.2)
+mtext("観測された値", side=2, line=2, at=mean(usr[3:4]), cex=1.2)
+
+# 右側: myPlotResiduals() (今回作成)
+myPlotResiduals(dh, rank=TRUE, main="")
+usr2 <- par("usr")
+mtext("予測値（順位変換済）", side=1, line=2, at=mean(usr2[1:2]), cex=1.2)
+mtext("DHARMa 残差", side=2, line=2, at=mean(usr2[3:4]), cex=1.2)
+
+dev.off()
+
+############
+

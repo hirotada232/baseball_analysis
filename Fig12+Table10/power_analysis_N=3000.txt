@@ -1,0 +1,95 @@
+#power analysis
+# 例: 既に mod_BEINF というgamlssモデルをフィット済み
+mu_hat  <- predict(mod_BEINF, what = "mu",    type="response")
+sg_hat  <- predict(mod_BEINF, what = "sigma", type="response")
+nu_hat  <- predict(mod_BEINF, what = "nu",    type="response")
+tau_hat <- predict(mod_BEINF, what = "tau",   type="response")
+
+# モデル式で pre_pinch_result の係数を操作したい場合:
+# 例: small_effect / large_effect など、複数パターンを定義
+###
+start_time <- Sys.time()
+set.seed(123)
+nsim <- 1000
+pvals <- numeric(nsim)
+
+
+
+# 効果量シフトは 0 で（現状の効果量に基づくシミュレーション）
+delta_effect <- 0.00  
+
+# サンプルサイズ候補（例: 1000 から 10000 まで 500 刻み）
+#Ns <- seq(from = 1000, to = 10000, by = 500)
+Ns <- 3000
+power_results <- numeric(length(Ns))
+names(power_results) <- Ns
+
+nsim <- 1000  # シミュレーション回数
+set.seed(123)
+start_time <- Sys.time()
+
+for(j in seq_along(Ns)){
+  N <- Ns[j]
+  pvals <- numeric(nsim)
+  
+  for(i in 1:nsim){
+    if(i %% 50 == 0) cat("Sample size", N, ": simulation", i, "\n")
+    
+    # 元のパラメータからサンプルサイズ N に合わせて再サンプリング（置換あり）
+    idx <- sample(1:length(mu_hat), N, replace = TRUE)
+    mu_sim  <- mu_hat[idx]
+    sg_sim  <- sg_hat[idx]
+    nu_sim  <- nu_hat[idx]
+    tau_sim <- tau_hat[idx]
+    
+    # 元データ m.data1 から N 行を抽出
+    df_sim <- m.data1[idx, ]
+    
+    # 治療群（pre_pinch_result == 1）の場合、μに delta_effect を加える（ここでは delta_effect = 0）
+    mu_sim_adjusted <- mu_sim + delta_effect * as.numeric(df_sim$pre_pinch_result)
+    
+    # (1) データ生成: rBEINF でシミュレーションデータを生成
+    y_sim <- rBEINF(
+      n = N,
+      mu = mu_sim_adjusted, 
+      sigma = sg_sim,
+      nu = nu_sim, 
+      tau = tau_sim
+    )
+    
+    # (2) シミュレーション用データフレームに OBP_sim 列を追加
+    df_sim$OBP_sim <- y_sim
+    
+    # (3) 同じモデル式で gamlss をフィット
+    mod_sim <- gamlss(
+      formula = OBP_sim ~ pre_pinch_result + inning,
+      sigma.formula = ~ 1,
+      nu.formula    = ~ 1,
+      tau.formula   = ~ 1,
+      family = BEINF,
+      data = df_sim,
+      trace  = FALSE
+    )
+    
+    # (4) capture.output() で要約表示を抑制しつつ p値を取得
+    tmp <- capture.output({ summ <- summary(mod_sim) })
+    p_val <- summ["pre_pinch_result", "Pr(>|t|)"]
+    pvals[i] <- p_val
+  }
+  # 検出力: p値が 0.05 未満となる割合
+  power_results[j] <- mean(pvals < 0.05)
+  cat("Sample size:", N, "-> Power:", power_results[j], "\n")
+}
+
+end_time <- Sys.time()
+print(power_results)
+cat("Total simulation time:", end_time - start_time, "\n")
+
+Sample size: 3000 -> Power: 0.996 
+> 
+> end_time <- Sys.time()
+> print(power_results)
+ 3000 
+0.996 
+> cat("Total simulation time:", end_time - start_time, "\n")
+Total simulation time: 11.92509 

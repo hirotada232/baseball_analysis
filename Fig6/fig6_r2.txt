@@ -1,0 +1,84 @@
+#【閾値3.0の場合】
+
+
+a <- read.csv('data_inning_score3.0.csv')
+
+####Dummy variable.
+a2 <- data.frame(a=factor(a[,2]))
+a2 <- cbind(a[,1],a2,a[,3:ncol(a)])
+
+colnames(a2) <- colnames(a)
+
+library(makedummies)
+b=makedummies(a2)
+
+datall <- b[,c(1:10,15:17)]
+summary(datall)
+
+library(MatchIt)
+m.out1 <- matchit(pre_pinch_result ~ first_hitter_2+first_hitter_3+first_hitter_4+first_hitter_5+first_hitter_6+first_hitter_7+first_hitter_8+first_hitter_9+inning,data=datall,replace=TRUE,distance="glm",method="nearest",ratio=1)
+plot(m.out1, type="hist")
+
+
+
+library(Cairo)
+library(showtext)
+
+# 日本語フォントの登録と有効化（Windows用: Meiryo）
+font_add("meiryo", "C:/Windows/Fonts/meiryo.ttc")
+showtext_auto()
+
+# マッチング前の元データに、MatchIt の distance を追加
+original_data <- m.out1$model$data
+original_data$distance <- m.out1$distance  # m.out1$distance は数値ベクトル
+
+# マッチング後のデータは match.data() で得られる
+matched_data <- match.data(m.out1)
+
+# 傾向スコアを各グループで抽出
+# ※ ここでは、処置変数が pre_pinch_result と仮定
+x1 <- subset(original_data, pre_pinch_result == 1)$distance  # マッチング前：処置群
+x2 <- subset(matched_data, pre_pinch_result == 1)$distance     # マッチング後：処置群
+x3 <- subset(original_data, pre_pinch_result == 0)$distance     # マッチング前：非処置群
+x4 <- subset(matched_data, pre_pinch_result == 0)$distance        # マッチング後：非処置群
+
+# PDFデバイス開始（CairoPDF でベクター形式のPDFを生成）
+CairoPDF("histograms_matchit.pdf", width = 8, height = 6, family = "meiryo")
+
+# 2行2列のレイアウトにする
+par(mfrow = c(2,2), family = "meiryo")
+
+# (1) ピンチをしのいだ後：マッチング前
+h1 <- hist(x1, breaks = 10, plot = FALSE)
+rel1 <- h1$counts / sum(h1$counts)
+barplot(rel1, names.arg = round(h1$mids, 2),
+        main = "ピンチをしのいだ後：マッチング前",
+        xlab = "傾向スコア", ylab = "相対度数",
+        col = "lightgray")
+
+# (2) ピンチをしのいだ後：マッチング後
+h2 <- hist(x2, breaks = 10, plot = FALSE)
+rel2 <- h2$counts / sum(h2$counts)
+barplot(rel2, names.arg = round(h2$mids, 2),
+        main = "ピンチをしのいだ後：マッチング後",
+        xlab = "傾向スコア", ylab = "相対度数",
+        col = "lightgray")
+
+# (3) 通常のハーフイニング：マッチング前
+h3 <- hist(x3, breaks = 10, plot = FALSE)
+rel3 <- h3$counts / sum(h3$counts)
+barplot(rel3, names.arg = round(h3$mids, 2),
+        main = "通常のハーフイニング：マッチング前",
+        xlab = "傾向スコア", ylab = "相対度数",
+        col = "lightgray")
+
+# (4) 通常のハーフイニング：マッチング後
+h4 <- hist(x4, breaks = 10, plot = FALSE)
+rel4 <- h4$counts / sum(h4$counts)
+barplot(rel4, names.arg = round(h4$mids, 2),
+        main = "通常のハーフイニング：マッチング後",
+        xlab = "傾向スコア", ylab = "相対度数",
+        col = "lightgray")
+
+dev.off()
+

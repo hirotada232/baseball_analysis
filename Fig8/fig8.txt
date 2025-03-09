@@ -1,0 +1,63 @@
+#【閾値3.0の場合】
+
+
+a <- read.csv('data_inning_score3.0.csv')
+
+####Dummy variable.
+a2 <- data.frame(a=factor(a[,2]))
+a2 <- cbind(a[,1],a2,a[,3:ncol(a)])
+
+colnames(a2) <- colnames(a)
+
+library(makedummies)
+b=makedummies(a2)
+
+datall <- b[,c(1:10,15:17)]
+summary(datall)
+
+library(MatchIt)
+m.out1 <- matchit(pre_pinch_result ~ first_hitter_2+first_hitter_3+first_hitter_4+first_hitter_5+first_hitter_6+first_hitter_7+first_hitter_8+first_hitter_9+inning,data=datall,replace=TRUE,distance="glm",method="nearest",ratio=1)
+
+
+plot(summary(m.out1),position=NULL)
+
+###pdf
+
+
+
+# 1. summary(m.out1, standardize = TRUE) を取得
+summ_out <- summary(m.out1, standardize = TRUE)
+
+# 2. 変数名（行名）を日本語に変更
+df_all <- summ_out$sum.all
+rownames(df_all) <- c("distance", "先頭打者打順_2", "先頭打者打順_3", 
+                      "先頭打者打順_4", "先頭打者打順_5", "先頭打者打順_6", 
+                      "先頭打者打順_7", "先頭打者打順_8", "先頭打者打順_9", 
+                      "イニング")
+
+library(Cairo)
+library(showtext)
+
+font_add("meiryo", "C:/Windows/Fonts/meiryo.ttc")
+showtext_auto()
+
+CairoPDF("matchit_summary.pdf", width=8, height=6, family="meiryo")
+
+# 下余白を広げる
+par(mar = c(7,4,4,2)+0.1)
+
+# MatchIt の標準化サマリーをプロット
+plot(summ_out, position=NULL)
+
+# デフォルトの英語ラベルと重ならないように xlab は空にする
+title(xlab="", line=5)
+
+# mtext() で日本語ラベルを後付け
+# side=1 → 下側, line=5 → 軸から5行分下げる, at=... → 横方向の位置
+# cex=1.2 → フォントサイズ拡大
+# adj=... → 左寄せ(0) / 右寄せ(1) / 中央(0.5)
+
+# 例：x軸が0～1.5程度の場合、at=0.8 などで中央よりやや右に配置
+mtext("標準化平均差", side=1, line=5, at=0.55, cex=1.2)
+
+dev.off()

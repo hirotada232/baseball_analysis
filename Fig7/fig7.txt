@@ -1,0 +1,34 @@
+#【閾値3.0の場合】
+
+
+a <- read.csv('data_inning_score3.0.csv')
+
+####Dummy variable.
+a2 <- data.frame(a=factor(a[,2]))
+a2 <- cbind(a[,1],a2,a[,3:ncol(a)])
+
+colnames(a2) <- colnames(a)
+
+library(makedummies)
+b=makedummies(a2)
+
+datall <- b[,c(1:10,15:17)]
+summary(datall)
+
+library(MatchIt)
+m.out1 <- matchit(pre_pinch_result ~ first_hitter_2+first_hitter_3+first_hitter_4+first_hitter_5+first_hitter_6+first_hitter_7+first_hitter_8+first_hitter_9+inning,data=datall,replace=TRUE,distance="glm",method="nearest",ratio=1)
+plot(m.out1, type = "QQ", interactive = FALSE)
+
+
+# 例：元データ datall の列名を変更
+names(datall)[names(datall) == "first_hitter_8"] <- "先頭打者打順_8"
+names(datall)[names(datall) == "first_hitter_9"] <- "先頭打者打順_9"
+names(datall)[names(datall) == "inning"]         <- "イニング"
+
+# ここで matchit() を改めて実行
+m.out1 <- matchit(pre_pinch_result ~ first_hitter_2+first_hitter_3+first_hitter_4+first_hitter_5+first_hitter_6+first_hitter_7+ 先頭打者打順_8+ 先頭打者打順_9+イニング,data=datall,replace=TRUE,distance="glm",method="nearest",ratio=1)
+
+# QQプロット
+plot(m.out1, type = "QQ", interactive = FALSE)
+
+

@@ -1,0 +1,96 @@
+#【閾値3.0の場合】
+
+
+a <- read.csv('data_inning_score3.0.csv')
+
+####Dummy variable.
+a2 <- data.frame(a=factor(a[,2]))
+a2 <- cbind(a[,1],a2,a[,3:ncol(a)])
+
+colnames(a2) <- colnames(a)
+
+library(makedummies)
+b=makedummies(a2)
+
+datall <- b[,c(1:10,15:17)]
+summary(datall)
+
+library(MatchIt)
+m.out1 <- matchit(pre_pinch_result ~ first_hitter_2+first_hitter_3+first_hitter_4+first_hitter_5+first_hitter_6+first_hitter_7+first_hitter_8+first_hitter_9+inning,data=datall,replace=TRUE,distance="glm",method="nearest",ratio=1)
+plot(m.out1, type="hist")
+
+
+#########
+
+
+library(MatchIt)
+# m.out1 という MatchIt オブジェクトが既に存在すると仮定
+# 例: m.out1 <- matchit(pinch ~ x1 + x2, data = originalData, method = "nearest")
+
+# m.out1 が既に作成されていると仮定
+matched_data <- match.data(m.out1)  # マッチング後データ（この中に distance 列があります）
+
+# マッチング前の傾向スコアは、MatchIt オブジェクトの distance に入っています
+original_scores <- m.out1$distance  # これは元のサンプルに対応するベクトル
+
+# もし、元データに処置変数 (pinch など) が含まれていれば、元データに propensity score を付加できます
+original_data <- m.out1$model$data  # マッチング前の元データ
+original_data$distance <- original_scores  # 傾向スコアを追加
+
+x1 <- subset(original_data, pre_pinch_result == 1)$distance
+x2 <- subset(matched_data, pre_pinch_result == 1)$distance
+x3 <- subset(original_data, pre_pinch_result == 0)$distance
+x4 <- subset(matched_data, pre_pinch_result == 0)$distance
+
+
+
+
+library(Cairo)
+library(showtext)
+
+# 日本語フォントの登録
+font_add("meiryo", "C:/Windows/Fonts/meiryo.ttc")
+showtext_auto()
+
+
+# PDFデバイス開始
+CairoPDF("histograms_matchit.pdf", width=8, height=6)
+
+# 日本語フォントを使う設定
+par(family = "meiryo")
+par(mfrow = c(2,2))  # 2行×2列で表示
+
+# (1) ピンチをしのいだ後：マッチング前
+hist(x1,
+     main = "ピンチをしのいだ後：マッチング前",
+     xlab = "傾向スコア",
+     ylab = "相対度数",
+     col = "lightgray",
+     breaks = 10)
+
+# (2) ピンチをしのいだ後：マッチング後
+hist(x2,
+     main = "ピンチをしのいだ後：マッチング後",
+     xlab = "傾向スコア",
+     ylab = "相対度数",
+     col = "lightgray",
+     breaks = 10)
+
+# (3) 通常のハーフイニング：マッチング前
+hist(x3,
+     main = "通常のハーフイニング：マッチング前",
+     xlab = "傾向スコア",
+     ylab = "相対度数",
+     col = "lightgray",
+     breaks = 10)
+
+# (4) 通常のハーフイニング：マッチング後
+hist(x4,
+     main = "通常のハーフイニング：マッチング後",
+     xlab = "傾向スコア",
+     ylab = "相対度数",
+     col = "lightgray",
+     breaks = 10)
+
+dev.off()  # PDFを閉じる
+

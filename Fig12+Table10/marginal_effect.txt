@@ -1,0 +1,48 @@
+松井 秀俊
+# 1. 推定結果の値（あなたのモデルの推定値）
+beta0 <- -0.3011788      # Intercept
+beta1 <-  0.1561008      # pre_pinch_result の係数
+beta2 <- -0.0005002      # X_1（ここでは inning としているが，1変数と仮定）
+
+nu  <- -0.94573         # Nu の定数項
+tau <- -4.112           # Tau の定数項
+
+# 2. ZOIB回帰の場合、連続部分の期待値の計算には logitリンクが使われるので、逆ロジット関数を定義
+inv_logit <- function(x) {
+  exp(x) / (1 + exp(x))
+}
+
+# 3. π0, π1 の計算（定数項のみのモデルの場合）
+pi0 <- exp(nu) / (1 + exp(nu) + exp(tau))
+pi1 <- exp(tau) / (1 + exp(nu) + exp(tau))
+
+# 4. 固定する共変量の値
+X_val <-  7.478814
+
+# 5. 処置なし（T=0）と処置あり（T=1）の場合の μ の計算
+mu_T0 <- inv_logit(beta0 + beta2 * X_val)
+mu_T1 <- inv_logit(beta0 + beta1 + beta2 * X_val)
+
+# 6. 全体の期待値の計算
+E_Y_T0 <- pi1 + (1 - pi0 - pi1) * mu_T0
+E_Y_T1 <- pi1 + (1 - pi0 - pi1) * mu_T1
+
+# 7. マージナル効果（絶対効果）の計算
+marginal_effect_absolute <- E_Y_T1 - E_Y_T0
+
+# 8. 相対効果の計算（処置あり / 処置なし）
+marginal_effect_relative <- E_Y_T1 / E_Y_T0
+
+cat("処置なしの期待値 (E[Y|T=0]):", E_Y_T0, "\n")
+cat("処置ありの期待値 (E[Y|T=1]):", E_Y_T1, "\n")
+cat("絶対マージナル効果 (Δ):", marginal_effect_absolute, "\n")
+cat("相対マージナル効果:", marginal_effect_relative, "\n")
+
+> cat("処置なしの期待値 (E[Y|T=0]):", E_Y_T0, "\n")
+処置なしの期待値 (E[Y|T=0]): 0.3137382 
+> cat("処置ありの期待値 (E[Y|T=1]):", E_Y_T1, "\n")
+処置ありの期待値 (E[Y|T=1]): 0.3411508 
+> cat("絶対マージナル効果 (Δ):", marginal_effect_absolute, "\n")
+絶対マージナル効果 (Δ): 0.02741267 
+> cat("相対マージナル効果:", marginal_effect_relative, "\n")
+相対マージナル効果: 1.087374 

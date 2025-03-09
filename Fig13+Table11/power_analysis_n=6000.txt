@@ -1,0 +1,62 @@
+
+
+library(glmmTMB)
+library(DHARMa)
+library(MASS)  # glm.nb() を使うため
+
+set.seed(123)
+
+# ---- 1. 負の二項回帰モデルの適用 ----
+model_nb2 <- glm.nb(score_num ~ pre_pinch_result + inning, data = m.data1)
+summary(model_nb2)
+
+# ---- 2. DHARMa を使ってシミュレーション ----
+sim_res <- simulateResiduals(fittedModel = model_nb2, n = 1000)
+
+# サンプルサイズ候補（例：500, 1000, 1500, 2000, 2500, 3000）
+# Ns <- seq(from = 500, to = 3000, by = 500)
+Ns <- 6000  
+power_results <- numeric(length(Ns))
+names(power_results) <- Ns
+
+nsim <- 1000  # 各サンプルサイズでのシミュレーション回数
+
+start_time <- Sys.time()
+
+for (j in seq_along(Ns)) {
+  N <- Ns[j]
+  pvals <- numeric(nsim)
+  
+  for(i in 1:nsim) {
+    if(i %% 50 == 0) cat("Sample size", N, ": simulation", i, "\n")
+    
+    # m.data1 からサンプルサイズ N のデータを抽出
+    idx <- sample(1:nrow(m.data1), N, replace = TRUE)
+    df_sim <- m.data1[idx, ]
+    
+    # DHARMa のシミュレーションデータを取得
+    # ※ 注意：recalculateResiduals(sim_res)$simulatedResponse は元のサンプルサイズ分の列を持つ
+    # ここでは、抽出した idx に対応する行で、i 番目のシミュレーション値を使用
+    df_sim$score_num_sim <- recalculateResiduals(sim_res)$simulatedResponse[idx, i]
+    
+    # 負の二項回帰モデルを再フィット
+    model_sim <- glm.nb(score_num_sim ~ pre_pinch_result + inning, data = df_sim)
+    
+    # 直接 summary() の係数行列から p値を抽出
+    p_val <- coef(summary(model_sim))["pre_pinch_result", "Pr(>|z|)"]
+    pvals[i] <- p_val
+  }
+  
+  # 検出力： p値 < 0.05 となる割合
+  power_results[j] <- mean(pvals < 0.05)
+  cat("Sample size:", N, "-> Power:", power_results[j], "\n")
+}
+
+end_time <- Sys.time()
+print(power_results)
+cat("Total simulation time:", end_time - start_time, "\n")
+
+> print(power_results)
+ 6000 
+0.809 
+> cat("Total simula
