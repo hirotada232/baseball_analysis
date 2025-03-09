@@ -1,0 +1,102 @@
+a <- read.csv('data_inning_score3.0.csv')
+
+####Dummy variable.
+a2 <- data.frame(a=factor(a[,2]))
+a2 <- cbind(a[,1],a2,a[,3:ncol(a)])
+
+colnames(a2) <- colnames(a)
+
+library(makedummies)
+b=makedummies(a2)
+
+datall <- b[,c(1:10,15:17)]
+summary(datall)
+head(datall)
+
+##########################
+#2021 Spring and Summer
+#datall <- datall[1:1387,]
+
+#2022 Spring and Summer
+#datall <- datall[1388:2786,]
+
+#2023 Spring and Summer
+#datall <- datall[2787:4260,]
+
+##########################
+
+library(MASS)
+
+bc <- boxcox( (OBP+1) ~ pre_pinch_result+first_hitter_2+first_hitter_3+first_hitter_4+first_hitter_5+first_hitter_6+first_hitter_7+first_hitter_8+first_hitter_9+inning,data=datall)
+lambda <- bc$x[which.max(bc$y)]
+new_model <- lm((((OBP+1)^lambda-1)/lambda) ~ pre_pinch_result+first_hitter_2+first_hitter_3+first_hitter_4+first_hitter_5+first_hitter_6+first_hitter_7+first_hitter_8+first_hitter_9+inning,data=datall)
+AIC(new_model)
+[1] -1563.418
+
+#2025.0203.
+standardized_residuals <- rstandard(new_model)
+qqnorm(standardized_residuals,xlim=c(-3,3),ylim=c(-3,3))
+ abline(a=0, b=1)
+
+hist(standardized_residuals,breaks=50)
+
+# install.packages("pwr") # 未インストールの場合、これでインストール
+library(pwr)
+
+# Cohen's f^2 の算出
+r_squared <- summary(new_model)$r.squared
+f2 <- r_squared / (1 - r_squared)
+
+# 検定力分析の実行
+# 例として、サンプルサイズがnで、自由度がdfであることが必要
+# 例: α (有意水準) = 0.05, 効果量 f2 は事前に算出済み
+n <- length(new_model$residuals)
+df <- summary(new_model)$df[1] # 自由度
+power_analysis <- pwr.f2.test(u = df, v = n - df - 1, f2 = f2, sig.level = 0.05)
+print(power_analysis)
+
+
+#p.out <- pwr.f2.test(d=dd,n=N1,sig.level=0.05,type="paired",alternative="greater")
+#plot(p.out)
+#power_analysis <- pwr.f2.test(u = 10, v = 1069 - 1, f2 = f2, sig.level = 0.05)
+#print(power_analysis)
+
+
+############figure2.
+
+library(Cairo)
+library(showtext)
+
+# Windows環境用：Meiryoフォントを登録
+font_add("meiryo", "C:/Windows/Fonts/meiryo.ttc")
+showtext_auto()
+
+# (1) 標準化残差を作成（例として）
+standardized_residuals <- rstandard(new_model)
+
+# (2) PDFデバイスをCairo + showtextで開く
+CairoPDF("residual_plots.pdf", width = 8, height = 4, family = "meiryo")
+
+# (3) マージンを調整（上側を小さく）
+#     デフォルトは par(mar = c(5,4,4,2) + 0.1)
+#     ここでは top=1.5 程度にしてみる
+par(mfrow = c(1, 2), family = "meiryo",
+    mar = c(5, 4, 1.5, 2) + 0.1)
+
+# (4-1) QQプロット
+qqnorm(standardized_residuals,
+       xlim = c(-3, 3), ylim = c(-3, 3),
+       main = "",
+       xlab = "理論値", ylab = "観測値")
+abline(a = 0, b = 1, col = "red")
+
+# (4-2) ヒストグラム
+hist(standardized_residuals, breaks = 50,
+     main = "",
+     xlab = "標準化残差", ylab = "度数",
+     col = "lightgray")
+
+dev.off()
+
+
+
