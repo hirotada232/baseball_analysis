@@ -1,0 +1,148 @@
+###Steps in score.
+#【閾値2.3の場合】
+a <- read.csv('data_inning_score2.3.csv')
+
+####Dummy variable.
+a2 <- data.frame(a=factor(a[,2]))
+a2 <- cbind(a[,1],a2,a[,3:ncol(a)])
+
+colnames(a2) <- colnames(a)
+
+library(makedummies)
+b=makedummies(a2)
+
+datall <- b[,c(1:10,15:17)]
+summary(datall)
+head(datall)
+
+
+####################
+library(MatchIt)
+m.out1 <- matchit(pre_pinch_result ~ first_hitter_2+first_hitter_3+first_hitter_4+first_hitter_5+first_hitter_6+first_hitter_7+first_hitter_8+first_hitter_9+inning,data=datall,replace=TRUE,distance="glm",method="nearest",ratio=1)
+m.data1 <- match.data(m.out1)
+####################
+#################
+library(glmmTMB)
+library(gamlss)
+#model-1
+mod_BEINF1 <- gamlss(
+  formula = OBP ~ pre_pinch_result + inning + first_hitter_2+first_hitter_3+first_hitter_4+first_hitter_5+first_hitter_6+first_hitter_7+first_hitter_8+first_hitter_9,  # μパラメータに関するモデル
+  sigma.formula = ~ 1,    # σは定数（~ 1）
+  nu.formula    = ~ 1,    # νは定数（~ 1） → 0膨張部分
+  tau.formula   = ~ 1,    # τは定数（~ 1） → 1膨張部分
+  family = BEINF,         # 0・1両方の膨張を考慮したベータ分布
+  data = m.data1
+)
+
+
+mod_BEINF2 <- gamlss(
+  formula = OBP ~ pre_pinch_result + inning,  # μパラメータに関するモデル
+  sigma.formula = ~ 1,    # σは定数（~ 1）
+  nu.formula    = ~ 1,    # νは定数（~ 1） → 0膨張部分
+  tau.formula   = ~ 1,    # τは定数（~ 1） → 1膨張部分
+  family = BEINF,         # 0・1両方の膨張を考慮したベータ分布
+  data = m.data1
+)
+
+
+
+# AIC の比較
+AIC_BEINF1 <- AIC(mod_BEINF1)
+AIC_BEINF2 <- AIC(mod_BEINF2)
+
+# 小さい方のモデルを選択
+if (AIC_BEINF1 < AIC_BEINF2) {
+  best_model <- "mod_BEINF1"
+  selected_model <- mod_BEINF1
+} else {
+  best_model <- "mod_BEINF2"
+  selected_model <- mod_BEINF2
+}
+
+# 結果の出力
+cat("AICが小さいモデル:", best_model, "\n")
+
+# pre_pinch_result の推定値、標準誤差を取得
+coefficients_mu <- coef(selected_model, what = "mu")
+se_mu <- sqrt(diag(vcov(selected_model, what = "mu")))
+
+if ("pre_pinch_result" %in% names(coefficients_mu)) {
+  estimate <- coefficients_mu["pre_pinch_result"]
+  std_error <- se_mu["pre_pinch_result"]
+  
+  # p値の計算
+  p_value <- 2 * (1 - pnorm(abs(estimate / std_error)))
+  
+  # 出力
+  cat("推定値:", estimate, "\n")
+  cat("標準誤差:", std_error, "\n")
+  cat("p値:", p_value, "\n")
+} else {
+  cat("エラー: pre_pinch_result の係数が見つかりませんでした。\n")
+}
+
+
+###Power analysis
+
+
+#power analysis
+# 例: 既に mod_BEINF2 というgamlssモデルをフィット済み
+mu_hat  <- predict(mod_BEINF2, what = "mu",    type="response")
+sg_hat  <- predict(mod_BEINF2, what = "sigma", type="response")
+nu_hat  <- predict(mod_BEINF2, what = "nu",    type="response")
+tau_hat <- predict(mod_BEINF2, what = "tau",   type="response")
+
+# モデル式で pre_pinch_result の係数を操作したい場合:
+# 例: small_effect / large_effect など、複数パターンを定義
+###
+start_time <- Sys.time()
+set.seed(123)
+nsim <- 1000
+pvals <- numeric(nsim)
+
+for(i in 1:nsim){
+  if (i %% 50 == 0) {
+    print(i)
+  }
+  # (1) データ生成
+  y_sim <- rBEINF(
+    n = length(mu_hat),
+    mu = mu_hat, 
+    sigma = sg_hat,
+    nu = nu_hat, 
+    tau = tau_hat
+  )
+
+  # (2) フィット
+  #    データフレームにシミュレートした y を入れて再度 gamlss を当てる
+  df_sim <- m.data1
+  df_sim$OBP_sim <- y_sim
+
+  mod_sim <- gamlss(
+    formula = OBP_sim ~ pre_pinch_result + inning, # 同じモデル式
+    sigma.formula = ~ 1,
+    nu.formula = ~ 1,
+    tau.formula = ~ 1,
+    family = BEINF,
+    data = df_sim,
+    trace  = FALSE
+  )
+
+  # (A) capture.output() で要約表示を抑制
+  tmp <- capture.output({
+    summ <- summary(mod_sim)
+  })
+
+  # "Mu Coefficients" の p値にアクセス
+  # 例えば 1列目が Estimate, 4列目が Pr(>|t|) になっていることが多いが要確認
+  p_val <- summ["pre_pinch_result", "Pr(>|t|)"]
+ pvals[i] <- p_val
+}
+
+# (4) p値 < 0.05 の割合 = 検出力
+mean(pvals < 0.05)
+end_time <- Sys.time()
+
+# 計算時間を表示
+end_time - start_time
+###

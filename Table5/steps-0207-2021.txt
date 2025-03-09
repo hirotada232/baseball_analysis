@@ -1,0 +1,193 @@
+###Steps in score.
+#【閾値3.0の場合-2021】
+a <- read.csv('data_inning_score3.0.csv')
+
+####Dummy variable.
+a2 <- data.frame(a=factor(a[,2]))
+a2 <- cbind(a[,1],a2,a[,3:ncol(a)])
+
+colnames(a2) <- colnames(a)
+
+library(makedummies)
+b=makedummies(a2)
+
+datall <- b[,c(1:10,15:17)]
+summary(datall)
+head(datall)
+
+#####
+#2021 Spring and Summer
+
+datall <- datall[1:1387,]
+
+#####
+#Poisson regression before matching.
+
+model_poisson <- glm(score_num ~ pre_pinch_result+first_hitter_2+first_hitter_3+first_hitter_4+first_hitter_5+first_hitter_6+first_hitter_7+first_hitter_8+first_hitter_9+inning, family="poisson", data=datall)
+summary(model_poisson)
+
+###
+# DHARMaによるシミュレーション残差の生成
+library(DHARMa)
+testDispersion(model_poisson)
+simulationOutput <- simulateResiduals(fittedModel = model_poisson)
+plot(simulationOutput)
+
+###
+par(mfrow=c(1,2))
+testDispersion(simulationOutput)
+plotResiduals(simulationOutput,datall$score_nmu)
+
+testZeroInflation(simulationOutput)
+
+
+#####################
+#Poisson regression before matching with only T and ining.
+
+model_poisson <- glm(score_num ~ pre_pinch_result + inning, family="poisson", data=datall)
+summary(model_poisson)
+
+###
+# DHARMaによるシミュレーション残差の生成
+library(DHARMa)
+testDispersion(model_poisson)
+simulationOutput <- simulateResiduals(fittedModel = model_poisson)
+plot(simulationOutput)
+
+###
+par(mfrow=c(1,2))
+testDispersion(simulationOutput)
+plotResiduals(simulationOutput,datall$score_nmu)
+
+testZeroInflation(simulationOutput)
+
+overdispersion_ratio <- sum(residuals(model_poisson, type = "pearson")^2) / df.residual(model_poisson)
+overdispersion_ratio
+##########################
+#Thus, for poisson, we employ model(3).But we should try NB.
+#First, we try without RE.
+
+library(MASS)
+
+#with first_hitter
+model_nb1 <- glm.nb(score_num ~ pre_pinch_result+first_hitter_2+first_hitter_3+first_hitter_4+first_hitter_5+first_hitter_6+first_hitter_7+first_hitter_8+first_hitter_9+inning, data=datall)
+summary(model_nb1)
+AIC(model_nb1)
+###
+# DHARMaによるシミュレーション残差の生成
+library(DHARMa)
+testDispersion(model_nb1)
+simulationOutput <- simulateResiduals(fittedModel = model_nb1)
+plot(simulationOutput)
+###############
+
+#without first_hitter
+model_nb2 <- glm.nb(score_num ~ pre_pinch_result+inning, data=datall)
+summary(model_nb2)
+AIC(model_nb2)
+###
+# DHARMaによるシミュレーション残差の生成
+library(DHARMa)
+testDispersion(model_nb2)
+simulationOutput <- simulateResiduals(fittedModel = model_nb2)
+plot(simulationOutput)
+
+###################3
+#Based on the comparison of AIC, we employ nb1.
+#zero_inflation test.
+testZeroInflation(model_nb1)
+#no prlbmem.
+#move on to the power analysis.
+################
+##Power analysis.
+
+library(glmmTMB)
+library(DHARMa)
+library(MASS)  # glm.nb() を使うために必要
+
+set.seed(123)
+
+# ---- 1. 負の二項回帰モデルの適用 ----
+model_nb1 <- glm.nb(score_num ~ pre_pinch_result + first_hitter_2 + first_hitter_3 + 
+                     first_hitter_4 + first_hitter_5 + first_hitter_6 + first_hitter_7 + 
+                     first_hitter_8 + first_hitter_9 + inning, data = datall)
+
+# ---- 2. DHARMa を使ってシミュレーション ----
+sim_res <- simulateResiduals(fittedModel = model_nb1, n = 1000)
+
+# ---- 3. シミュレーションの分布をチェック ----
+plot(sim_res)
+
+# ---- 4. シミュレーションデータを使い、繰り返しモデルをフィット ----
+n_sim <- 1000  # シミュレーション回数
+p_values <- numeric(n_sim)  # p値を保存
+
+for (i in 1:n_sim) {
+  # DHARMa のシミュレーションデータを取得
+  datall$score_num_sim <- recalculateResiduals(sim_res)$simulatedResponse[, i]  
+  
+  # 負の二項回帰モデルを適用
+  model_sim <- glm.nb(score_num_sim ~ pre_pinch_result + first_hitter_2 + first_hitter_3 + 
+                       first_hitter_4 + first_hitter_5 + first_hitter_6 + first_hitter_7 + 
+                       first_hitter_8 + first_hitter_9 + inning, data = datall)
+  
+  # p値を保存
+  p_values[i] <- coefficients(summary(model_sim))["pre_pinch_result", "Pr(>|z|)"]
+}
+
+# p値の分布を確認
+hist(p_values)
+mean(p_values < 0.05)  # 検出力
+
+# パワーを計算（p < 0.05 の割合）
+power <- mean(p_values < 0.05)
+print(paste("推定パワー: ", round(power, 3)))
+
+
+
+###########################
+#just in case, we try with poisson.
+
+library(DHARMa)
+
+set.seed(123)
+
+# ---- 1. Ajustement du modèle de Poisson ----
+model_pois <- glm(score_num ~ pre_pinch_result + first_hitter_2 + first_hitter_3 + 
+                   first_hitter_4 + first_hitter_5 + first_hitter_6 + first_hitter_7 + 
+                   first_hitter_8 + first_hitter_9 + inning, 
+                   data = datall, family = poisson)
+
+# ---- 2. Simulation des résidus avec DHARMa ----
+sim_res <- simulateResiduals(fittedModel = model_pois, n = 1000)
+
+# ---- 3. Vérification de l'adéquation du modèle ----
+plot(sim_res)
+
+# ---- 4. Estimation de la puissance statistique par simulation ----
+n_sim <- 1000  # Nombre de simulations
+p_values <- numeric(n_sim)  # Stockage des p-valeurs
+
+for (i in 1:n_sim) {
+  # Génération des nouvelles réponses simulées
+  datall$score_num_sim <- recalculateResiduals(sim_res)$simulatedResponse[, i]  
+  
+  # Ajustement d'un nouveau modèle de Poisson sur les données simulées
+  model_sim <- glm(score_num_sim ~ pre_pinch_result + first_hitter_2 + first_hitter_3 + 
+                    first_hitter_4 + first_hitter_5 + first_hitter_6 + first_hitter_7 + 
+                    first_hitter_8 + first_hitter_9 + inning, 
+                    data = datall, family = poisson)
+  
+  # Extraction de la p-valeur du coefficient "pre_pinch_result"
+  p_values[i] <- summary(model_sim)$coefficients["pre_pinch_result", "Pr(>|z|)"]
+}
+
+# ---- 5. Analyse des résultats ----
+hist(p_values, main = "Distribution des p-valeurs", xlab = "p-valeur")
+mean(p_values < 0.05)  # Estimation de la puissance statistique
+
+# パワーを計算（p < 0.05 の割合）
+power <- mean(p_values < 0.05)
+print(paste("推定パワー: ", round(power, 3)))
+
+

@@ -1,0 +1,107 @@
+###Steps in score.
+#【閾値2.3の場合】
+a <- read.csv('data_inning_score2.3.csv')
+
+####Dummy variable.
+a2 <- data.frame(a=factor(a[,2]))
+a2 <- cbind(a[,1],a2,a[,3:ncol(a)])
+
+colnames(a2) <- colnames(a)
+
+library(makedummies)
+b=makedummies(a2)
+
+datall <- b[,c(1:10,15:17)]
+summary(datall)
+head(datall)
+
+
+####################
+library(MatchIt)
+m.out1 <- matchit(pre_pinch_result ~ first_hitter_2+first_hitter_3+first_hitter_4+first_hitter_5+first_hitter_6+first_hitter_7+first_hitter_8+first_hitter_9+inning,data=datall,replace=TRUE,distance="glm",method="nearest",ratio=1)
+m.data1 <- match.data(m.out1)
+####################
+
+library(MASS)
+model_nb1 <- glm.nb(score_num ~ pre_pinch_result+first_hitter_2+first_hitter_3+first_hitter_4+first_hitter_5+first_hitter_6+first_hitter_7+first_hitter_8+first_hitter_9+inning, data=m.data1)
+#summary(model_nb1)
+
+library(MASS)
+model_nb2 <- glm.nb(score_num ~ pre_pinch_result+inning, data=m.data1)
+#summary(model_nb2)
+
+
+# AIC の比較
+AIC_nb1 <- AIC(model_nb1)
+AIC_nb2 <- AIC(model_nb2)
+
+# 小さい方のモデルを選択
+if (AIC_nb1 < AIC_nb2) {
+  best_model <- "model_nb1"
+  selected_model <- model_nb1
+} else {
+  best_model <- "model_nb2"
+  selected_model <- model_nb2
+}
+
+# 結果の出力
+cat("AICが小さいモデル:", best_model, "\n")
+
+# pre_pinch_result の推定値、標準誤差、p値を取得
+summary_selected <- summary(selected_model)
+pre_pinch_result_coef <- summary_selected$coefficients["pre_pinch_result", ]
+
+# 出力
+cat("推定値:", pre_pinch_result_coef["Estimate"], "\n")
+cat("標準誤差:", pre_pinch_result_coef["Std. Error"], "\n")
+cat("p値:", pre_pinch_result_coef["Pr(>|z|)"], "\n")
+
+
+################
+##Power analysis.
+
+library(glmmTMB)
+library(DHARMa)
+library(MASS)  # glm.nb() を使うために必要
+
+set.seed(123)
+
+# ---- 1. 負の二項回帰モデルの適用 ----
+model_nb2 <- glm.nb(score_num ~ pre_pinch_result+inning, data=m.data1)
+
+#model_nb1 <- glm.nb(score_num ~ pre_pinch_result + first_hitter_2 + first_hitter_3 + 
+#                     first_hitter_4 + first_hitter_5 + first_hitter_6 + first_hitter_7 + 
+#                     first_hitter_8 + first_hitter_9 + inning, data = m.data1)
+
+# ---- 2. DHARMa を使ってシミュレーション ----
+sim_res <- simulateResiduals(fittedModel = model_nb2, n = 1000)
+
+# ---- 3. シミュレーションの分布をチェック ----
+plot(sim_res)
+
+# ---- 4. シミュレーションデータを使い、繰り返しモデルをフィット ----
+n_sim <- 1000  # シミュレーション回数
+p_values <- numeric(n_sim)  # p値を保存
+
+for (i in 1:n_sim) {
+  # DHARMa のシミュレーションデータを取得
+  m.data1$score_num_sim <- recalculateResiduals(sim_res)$simulatedResponse[, i]  
+  
+  # 負の二項回帰モデルを適用
+  model_sim <- glm.nb(score_num_sim ~ pre_pinch_result + inning, data = m.data1)
+  
+  # p値を保存
+  p_values[i] <- coefficients(summary(model_sim))["pre_pinch_result", "Pr(>|z|)"]
+}
+
+# p値の分布を確認
+hist(p_values)
+mean(p_values < 0.05)  # 検出力
+
+# パワーを計算（p < 0.05 の割合）
+power <- mean(p_values < 0.05)
+print(paste("推定パワー: ", round(power, 3)))
+
+
+
+
